@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Počítadlo</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header>
+    <h1>Počítadlo</h1>
+    <button id="accountBtn" class="icon-btn hidden" aria-label="Účet">⋮</button>
+  </header>
+
+  <main>
+    <section id="loginView" class="center-card">
+      <button id="loginBtn" class="google-btn">Přihlásit přes Google</button>
+      <p id="loginError" class="error"></p>
+    </section>
+
+    <section id="appView" class="hidden">
+      <div id="items" class="items"></div>
+      <p id="emptyState" class="empty hidden">Zatím tu nic není.</p>
+    </section>
+  </main>
+
+  <button id="addBtn" class="fab hidden" aria-label="Přidat položku">+</button>
+
+  <dialog id="addDialog">
+    <form id="addForm" method="dialog">
+      <h2>Nová položka</h2>
+      <label>Název
+        <input id="newName" maxlength="40" required autofocus>
+      </label>
+      <div class="actions">
+        <button type="button" data-close="addDialog" class="secondary">Zrušit</button>
+        <button type="submit">Přidat</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="editDialog">
+    <form id="editForm" method="dialog">
+      <h2>Upravit</h2>
+      <input id="editId" type="hidden">
+      <label>Název
+        <input id="editName" maxlength="40" required>
+      </label>
+      <div class="quick-grid">
+        <label>Tlačítko 1<input id="quick1" type="number" min="1" max="999" required></label>
+        <label>Tlačítko 2<input id="quick2" type="number" min="1" max="999" required></label>
+        <label>Tlačítko 3<input id="quick3" type="number" min="1" max="999" required></label>
+      </div>
+      <div class="actions split">
+        <button id="deleteBtn" type="button" class="danger">Smazat</button>
+        <span></span>
+        <button type="button" data-close="editDialog" class="secondary">Zrušit</button>
+        <button type="submit">Uložit</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="accountDialog">
+    <div class="dialog-body">
+      <p id="userEmail"></p>
+      <button id="installBtn" class="secondary hidden">Instalovat aplikaci</button>
+      <button id="logoutBtn" class="danger">Odhlásit</button>
+      <button type="button" data-close="accountDialog" class="secondary">Zavřít</button>
+    </div>
+  </dialog>
+
+  <template id="itemTemplate">
+    <article class="item">
+      <div class="item-top">
+        <div>
+          <h2 class="item-name"></h2>
+          <div class="count">0</div>
+        </div>
+        <button class="edit icon-btn" aria-label="Upravit">✎</button>
+      </div>
+      <div class="quick-buttons"></div>
+      <form class="custom-form">
+        <input class="custom-value" type="number" min="1" max="99999" inputmode="numeric" placeholder="Jiná hodnota">
+        <button type="submit">Přidat</button>
+      </form>
+    </article>
+  </template>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

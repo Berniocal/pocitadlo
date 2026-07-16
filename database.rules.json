@@ -1,0 +1,8 @@
+{
+  "rules": {
+    "shared": {
+      ".read": "auth != null && auth.token.email_verified == true && (auth.token.email == 'prvni@gmail.com' || auth.token.email == 'druhy@gmail.com')",
+      ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'prvni@gmail.com' || auth.token.email == 'druhy@gmail.com')"
+    }
+  }
+}
