@@ -13,5 +13,5 @@ export   const firebaseConfig = {
 // Stejné adresy nastavte také v database.rules.json.
 export const allowedEmails = [
   "jendabernard@gmail.com",
-  "klarabernardova@email.cz"
+  "klarabernardova7@gmail.com"
 ];
