@@ -39,6 +39,11 @@ let deferredInstallPrompt = null;
 let activePeriod = "week";
 let periodAnchor = new Date();
 let chartDataCache = [];
+let overviewRows = [];
+let overviewExercises = [];
+let selectedExerciseIndex = 0;
+let activeChartType = "bar";
+const expandedItems = new Set();
 
 
 function applyTheme(theme) {
@@ -150,6 +155,11 @@ function renderItems() {
 
   for (const [id, item] of entries) {
     const node = $("#itemTemplate").content.firstElementChild.cloneNode(true);
+    if (expandedItems.has(id)) {
+      node.classList.remove("collapsed");
+      node.querySelector(".toggle-details").setAttribute("aria-expanded", "true");
+      node.querySelector(".toggle-details").setAttribute("aria-label", "Sbalit položku");
+    }
     node.querySelector(".item-name").textContent = item.name || "Bez názvu";
     node.querySelector(".count").textContent = Number(item.count || 0).toLocaleString("cs-CZ");
     const todayCount = Number(todayValues[id] || 0);
@@ -166,8 +176,11 @@ function renderItems() {
     addOneButton.addEventListener("click", () => addValue(id, 1, addOneButton));
 
     const toggleButton = node.querySelector(".toggle-details");
-    toggleButton.addEventListener("click", () => {
+    toggleButton.addEventListener("click", event => {
+      event.stopPropagation();
       const collapsed = node.classList.toggle("collapsed");
+      if (collapsed) expandedItems.delete(id);
+      else expandedItems.add(id);
       toggleButton.setAttribute("aria-expanded", String(!collapsed));
       toggleButton.setAttribute("aria-label", collapsed ? "Rozbalit položku" : "Sbalit položku");
     });
@@ -344,6 +357,26 @@ document.querySelectorAll("[data-period]").forEach(btn => {
 $("#periodPrev").addEventListener("click", () => shiftPeriod(-1));
 $("#periodNext").addEventListener("click", () => shiftPeriod(1));
 
+$("#exercisePrev").addEventListener("click", () => shiftExercise(-1));
+$("#exerciseNext").addEventListener("click", () => shiftExercise(1));
+
+document.querySelectorAll("[data-chart-type]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    activeChartType = btn.dataset.chartType;
+    document.querySelectorAll("[data-chart-type]").forEach(b =>
+      b.classList.toggle("active", b === btn)
+    );
+    drawSelectedExerciseChart();
+  });
+});
+
+function shiftExercise(direction) {
+  if (!overviewExercises.length) return;
+  selectedExerciseIndex =
+    (selectedExerciseIndex + direction + overviewExercises.length) % overviewExercises.length;
+  drawSelectedExerciseChart();
+}
+
 function shiftPeriod(direction) {
   if (activePeriod === "week") periodAnchor.setDate(periodAnchor.getDate() + 7 * direction);
   if (activePeriod === "month") periodAnchor.setMonth(periodAnchor.getMonth() + direction);
@@ -376,51 +409,112 @@ function periodRange() {
 async function loadOverview() {
   const { start, end, label } = periodRange();
   $("#periodLabel").textContent = label;
+
   const snap = await get(ref(db, "shared/daily"));
   const all = snap.val() || {};
+
+  overviewExercises = Object.entries(currentItems)
+    .sort((a,b) => (a[1].createdAt || 0) - (b[1].createdAt || 0))
+    .map(([id,item]) => ({ id, name: item.name || "Bez názvu" }));
+
+  if (selectedExerciseIndex >= overviewExercises.length) selectedExerciseIndex = 0;
+
   const rows = [];
 
   if (activePeriod === "year") {
     for (let m = 0; m < 12; m++) {
-      let total = 0;
-      Object.entries(all).forEach(([key, values]) => {
+      const values = {};
+      overviewExercises.forEach(ex => values[ex.id] = 0);
+
+      Object.entries(all).forEach(([key, dayValues]) => {
         const d = parseDateKey(key);
         if (d.getFullYear() === start.getFullYear() && d.getMonth() === m) {
-          total += Object.values(values || {}).reduce((s,v) => s + Number(v || 0), 0);
+          overviewExercises.forEach(ex => {
+            values[ex.id] += Number(dayValues?.[ex.id] || 0);
+          });
         }
       });
+
       rows.push({
-        label: new Date(start.getFullYear(), m, 1).toLocaleDateString("cs-CZ",{month:"short"}),
-        total
+        label: new Date(start.getFullYear(), m, 1)
+          .toLocaleDateString("cs-CZ", {month:"short"}),
+        values
       });
     }
   } else {
     const cursor = new Date(start);
     while (cursor <= end) {
       const key = localDateKey(cursor);
-      const total = Object.values(all[key] || {}).reduce((s,v) => s + Number(v || 0), 0);
+      const dayValues = all[key] || {};
+      const values = {};
+      overviewExercises.forEach(ex => values[ex.id] = Number(dayValues[ex.id] || 0));
+
       rows.push({
         label: activePeriod === "week"
           ? cursor.toLocaleDateString("cs-CZ",{weekday:"short",day:"numeric",month:"numeric"})
           : cursor.toLocaleDateString("cs-CZ",{day:"numeric",month:"numeric"}),
-        total
+        values
       });
       cursor.setDate(cursor.getDate() + 1);
     }
   }
-  chartDataCache = rows;
-  renderOverviewTable(rows);
-  drawChart(rows);
+
+  overviewRows = rows;
+  renderOverviewTable();
+  drawSelectedExerciseChart();
 }
 
-function renderOverviewTable(rows) {
+function renderOverviewTable() {
+  const head = $("#overviewHead");
   const body = $("#overviewTable");
+  head.replaceChildren();
   body.replaceChildren();
-  rows.forEach(row => {
+
+  const headerRow = document.createElement("tr");
+  const dateTh = document.createElement("th");
+  dateTh.textContent = activePeriod === "year" ? "Měsíc" : "Datum";
+  headerRow.appendChild(dateTh);
+
+  overviewExercises.forEach(ex => {
+    const th = document.createElement("th");
+    th.textContent = ex.name;
+    headerRow.appendChild(th);
+  });
+  head.appendChild(headerRow);
+
+  overviewRows.forEach(row => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(row.label)}</td><td>${row.total.toLocaleString("cs-CZ")}</td>`;
+    const labelTd = document.createElement("td");
+    labelTd.textContent = row.label;
+    tr.appendChild(labelTd);
+
+    overviewExercises.forEach(ex => {
+      const td = document.createElement("td");
+      td.textContent = Number(row.values[ex.id] || 0).toLocaleString("cs-CZ");
+      tr.appendChild(td);
+    });
     body.appendChild(tr);
   });
+}
+
+function drawSelectedExerciseChart() {
+  const title = $("#chartExerciseTitle");
+  if (!overviewExercises.length) {
+    title.textContent = "Žádný cvik";
+    drawChart([]);
+    return;
+  }
+
+  const exercise = overviewExercises[selectedExerciseIndex];
+  title.textContent = exercise.name;
+
+  const rows = overviewRows.map(row => ({
+    label: row.label,
+    total: Number(row.values[exercise.id] || 0)
+  }));
+
+  chartDataCache = rows;
+  drawChart(rows);
 }
 
 function drawChart(rows) {
@@ -429,48 +523,89 @@ function drawChart(rows) {
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = canvas.parentElement.clientWidth - 16;
   const cssHeight = 300;
-  canvas.width = Math.max(320, cssWidth) * dpr;
+  const width = Math.max(320, cssWidth);
+
+  canvas.width = width * dpr;
   canvas.height = cssHeight * dpr;
-  canvas.style.width = `${Math.max(320, cssWidth)}px`;
+  canvas.style.width = `${width}px`;
   canvas.style.height = `${cssHeight}px`;
   ctx.setTransform(dpr,0,0,dpr,0,0);
 
-  const w = Math.max(320, cssWidth), h = cssHeight;
+  const w = width, h = cssHeight;
   ctx.clearRect(0,0,w,h);
-  const pad = {l:42,r:12,t:18,b:48};
-  const cw = w-pad.l-pad.r, ch = h-pad.t-pad.b;
+
+  const dark = document.body.classList.contains("dark");
+  const gridColor = dark ? "#4b5563" : "#d1d5db";
+  const textColor = dark ? "#d1d5db" : "#374151";
+  const dataColor = "#2563eb";
+  const pad = {l:42,r:14,t:18,b:52};
+  const cw = w-pad.l-pad.r;
+  const ch = h-pad.t-pad.b;
   const max = Math.max(1, ...rows.map(r => r.total));
 
-  ctx.strokeStyle = "#d1d5db";
-  ctx.fillStyle = "#6b7280";
+  ctx.strokeStyle = gridColor;
+  ctx.fillStyle = textColor;
   ctx.font = "12px system-ui";
   ctx.lineWidth = 1;
 
   for (let i=0;i<=4;i++) {
     const y = pad.t + ch - ch*i/4;
-    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke();
-    const val = Math.round(max*i/4);
-    ctx.fillText(String(val), 4, y+4);
+    ctx.beginPath();
+    ctx.moveTo(pad.l,y);
+    ctx.lineTo(w-pad.r,y);
+    ctx.stroke();
+    ctx.fillText(String(Math.round(max*i/4)), 4, y+4);
   }
 
-  const gap = 4;
-  const bw = Math.max(2, cw/rows.length-gap);
-  rows.forEach((row,i) => {
-    const x = pad.l + i*cw/rows.length + gap/2;
-    const bh = ch*(row.total/max);
-    ctx.fillStyle = "#2563eb";
-    ctx.fillRect(x, pad.t+ch-bh, bw, bh);
+  if (!rows.length) return;
 
-    const showEvery = rows.length > 14 ? Math.ceil(rows.length/8) : 1;
+  const xAt = i => pad.l + (rows.length === 1 ? cw/2 : i*cw/(rows.length-1));
+  const yAt = value => pad.t + ch - ch*(value/max);
+  const showEvery = rows.length > 14 ? Math.ceil(rows.length/8) : 1;
+
+  rows.forEach((row,i) => {
     if (i % showEvery === 0) {
+      const x = xAt(i);
       ctx.save();
-      ctx.translate(x+bw/2, h-10);
+      ctx.translate(x, h-10);
       ctx.rotate(-0.55);
-      ctx.fillStyle = "#374151";
+      ctx.fillStyle = textColor;
       ctx.textAlign = "right";
       ctx.fillText(row.label,0,0);
       ctx.restore();
     }
+  });
+
+  if (activeChartType === "bar") {
+    const slot = cw / Math.max(rows.length, 1);
+    const bw = Math.max(3, slot * 0.68);
+    rows.forEach((row,i) => {
+      const x = pad.l + i*slot + (slot-bw)/2;
+      const y = yAt(row.total);
+      ctx.fillStyle = dataColor;
+      ctx.fillRect(x, y, bw, pad.t+ch-y);
+    });
+    return;
+  }
+
+  if (activeChartType === "line") {
+    ctx.beginPath();
+    rows.forEach((row,i) => {
+      const x = xAt(i), y = yAt(row.total);
+      if (i === 0) ctx.moveTo(x,y);
+      else ctx.lineTo(x,y);
+    });
+    ctx.strokeStyle = dataColor;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  rows.forEach((row,i) => {
+    const x = xAt(i), y = yAt(row.total);
+    ctx.beginPath();
+    ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fillStyle = dataColor;
+    ctx.fill();
   });
 }
 

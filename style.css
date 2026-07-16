@@ -68,3 +68,16 @@ body.dark th,
 body.dark td{border-bottom-color:#374151}
 body.dark .chart-wrap{border-color:#374151}
 body.dark dialog::backdrop{background:#000b}
+
+.exercise-chart-nav{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin:18px 0 10px}
+.exercise-chart-nav h3{margin:0;text-align:center;font-size:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.exercise-chart-nav button{padding:9px 18px;font-size:23px}
+.chart-type-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.chart-type-tabs button{background:#e5e7eb;color:#111827;padding:10px}
+.chart-type-tabs button.active{background:#2563eb;color:white}
+body.dark .chart-type-tabs button{background:#374151;color:#f9fafb}
+body.dark .chart-type-tabs button.active{background:#2563eb}
+.table-wrap table{min-width:max-content}
+.table-wrap th,.table-wrap td{min-width:86px}
+.table-wrap th:first-child,.table-wrap td:first-child{position:sticky;left:0;z-index:1;background:white;min-width:105px}
+body.dark .table-wrap th:first-child,body.dark .table-wrap td:first-child{background:#1f2937}

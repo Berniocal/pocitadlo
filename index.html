@@ -59,12 +59,22 @@
           <strong id="periodLabel"></strong>
           <button id="periodNext" class="secondary">›</button>
         </div>
+        <div class="exercise-chart-nav">
+          <button id="exercisePrev" class="secondary" aria-label="Předchozí cvik">‹</button>
+          <h3 id="chartExerciseTitle">Cvik</h3>
+          <button id="exerciseNext" class="secondary" aria-label="Další cvik">›</button>
+        </div>
+        <div class="chart-type-tabs">
+          <button type="button" data-chart-type="bar" class="active">Sloupce</button>
+          <button type="button" data-chart-type="scatter">Body</button>
+          <button type="button" data-chart-type="line">Křivka</button>
+        </div>
         <div class="chart-wrap">
           <canvas id="overviewChart" width="720" height="340"></canvas>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Datum</th><th>Celkem</th></tr></thead>
+            <thead id="overviewHead"></thead>
             <tbody id="overviewTable"></tbody>
           </table>
         </div>
