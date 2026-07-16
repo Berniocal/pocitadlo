@@ -5,7 +5,7 @@ import {
   getRedirectResult, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
-  getDatabase, ref, onValue, push, set, update, remove, runTransaction
+  getDatabase, ref, onValue, push, set, update, remove, runTransaction, get
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-database.js";
 
 const $ = (s) => document.querySelector(s);
@@ -17,20 +17,48 @@ provider.setCustomParameters({ prompt: "select_account" });
 
 const loginView = $("#loginView");
 const appView = $("#appView");
+const calendarView = $("#calendarView");
+const overviewView = $("#overviewView");
 const loginError = $("#loginError");
 const itemsEl = $("#items");
 const emptyState = $("#emptyState");
 const addBtn = $("#addBtn");
 const accountBtn = $("#accountBtn");
+const calendarBtn = $("#calendarBtn");
+const overviewBtn = $("#overviewBtn");
 const addDialog = $("#addDialog");
 const editDialog = $("#editDialog");
 const accountDialog = $("#accountDialog");
+
 let currentItems = {};
-let unsubscribe = null;
+let todayValues = {};
+let unsubscribeItems = null;
+let unsubscribeToday = null;
 let deferredInstallPrompt = null;
+let activePeriod = "week";
+let periodAnchor = new Date();
+let chartDataCache = [];
 
 function allowed(user) {
   return !!user?.email && allowedEmails.map(x => x.toLowerCase()).includes(user.email.toLowerCase());
+}
+
+function localDateKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function parseDateKey(key) {
+  const [y,m,d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function showView(view) {
+  [appView, calendarView, overviewView].forEach(v => v.classList.add("hidden"));
+  view.classList.remove("hidden");
+  addBtn.classList.toggle("hidden", view !== appView);
 }
 
 $("#loginBtn").addEventListener("click", async () => {
@@ -50,12 +78,14 @@ $("#loginBtn").addEventListener("click", async () => {
 getRedirectResult(auth).catch(console.error);
 
 onAuthStateChanged(auth, async (user) => {
-  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  if (unsubscribeItems) unsubscribeItems();
+  if (unsubscribeToday) unsubscribeToday();
+  unsubscribeItems = unsubscribeToday = null;
+
   if (!user) {
     loginView.classList.remove("hidden");
-    appView.classList.add("hidden");
-    addBtn.classList.add("hidden");
-    accountBtn.classList.add("hidden");
+    [appView, calendarView, overviewView, addBtn, accountBtn, calendarBtn, overviewBtn]
+      .forEach(el => el.classList.add("hidden"));
     return;
   }
   if (!allowed(user)) {
@@ -63,17 +93,22 @@ onAuthStateChanged(auth, async (user) => {
     await signOut(auth);
     return;
   }
+
   loginView.classList.add("hidden");
-  appView.classList.remove("hidden");
-  addBtn.classList.remove("hidden");
   accountBtn.classList.remove("hidden");
+  calendarBtn.classList.remove("hidden");
+  overviewBtn.classList.remove("hidden");
   $("#userEmail").textContent = user.email;
-  unsubscribe = onValue(ref(db, "shared/items"), snap => {
+  showView(appView);
+
+  unsubscribeItems = onValue(ref(db, "shared/items"), snap => {
     currentItems = snap.val() || {};
     renderItems();
-  }, error => {
-    console.error(error);
-    alert("Data se nepodařilo načíst.");
+  });
+
+  unsubscribeToday = onValue(ref(db, `shared/daily/${localDateKey()}`), snap => {
+    todayValues = snap.val() || {};
+    renderItems();
   });
 });
 
@@ -88,9 +123,19 @@ function renderItems() {
     const node = $("#itemTemplate").content.firstElementChild.cloneNode(true);
     node.querySelector(".item-name").textContent = item.name || "Bez názvu";
     node.querySelector(".count").textContent = Number(item.count || 0).toLocaleString("cs-CZ");
+    node.querySelector(".today-count").textContent =
+      `Dnes: ${Number(todayValues[id] || 0).toLocaleString("cs-CZ")}`;
 
     const quicks = Array.isArray(item.quick) ? item.quick : [1,3,5];
     const quickWrap = node.querySelector(".quick-buttons");
+
+    const minus = document.createElement("button");
+    minus.type = "button";
+    minus.textContent = "−1";
+    minus.className = "secondary";
+    minus.addEventListener("click", () => addValue(id, -1, minus));
+    quickWrap.appendChild(minus);
+
     quicks.slice(0,3).forEach(value => {
       const b = document.createElement("button");
       b.type = "button";
@@ -98,15 +143,20 @@ function renderItems() {
       b.addEventListener("click", () => addValue(id, Number(value), b));
       quickWrap.appendChild(b);
     });
+    quickWrap.style.gridTemplateColumns = "repeat(4,1fr)";
 
     node.querySelector(".custom-form").addEventListener("submit", async e => {
       e.preventDefault();
       const input = node.querySelector(".custom-value");
       const value = Number(input.value);
-      if (!Number.isInteger(value) || value <= 0) return;
+      if (!Number.isInteger(value) || value === 0) return;
       await addValue(id, value, e.submitter);
       input.value = "";
     });
+
+    const customInput = node.querySelector(".custom-value");
+    customInput.min = "-99999";
+    customInput.placeholder = "Jiná hodnota";
 
     node.querySelector(".edit").addEventListener("click", () => openEdit(id));
     itemsEl.appendChild(node);
@@ -114,10 +164,28 @@ function renderItems() {
 }
 
 async function addValue(id, value, button) {
-  if (!Number.isFinite(value) || value <= 0) return;
+  if (!Number.isInteger(value) || value === 0) return;
   button?.classList.add("syncing");
+  const day = localDateKey();
+  const totalRef = ref(db, `shared/items/${id}/count`);
+  const dailyRef = ref(db, `shared/daily/${day}/${id}`);
+
   try {
-    await runTransaction(ref(db, `shared/items/${id}/count`), current => Number(current || 0) + value);
+    const beforeSnap = await get(totalRef);
+    const beforeTotal = Number(beforeSnap.val() || 0);
+    const effectiveDelta = value < 0 ? -Math.min(Math.abs(value), beforeTotal) : value;
+    if (effectiveDelta === 0) return;
+
+    const totalResult = await runTransaction(totalRef, current => {
+      const next = Number(current || 0) + effectiveDelta;
+      return Math.max(0, next);
+    });
+    if (!totalResult.committed) return;
+
+    await runTransaction(dailyRef, current => {
+      const next = Number(current || 0) + effectiveDelta;
+      return Math.max(0, next);
+    });
     await set(ref(db, `shared/items/${id}/updatedAt`), Date.now());
   } catch (error) {
     console.error(error);
@@ -170,6 +238,189 @@ $("#deleteBtn").addEventListener("click", async () => {
   await remove(ref(db, `shared/items/${id}`));
   editDialog.close();
 });
+
+calendarBtn.addEventListener("click", () => {
+  $("#calendarDate").value = localDateKey();
+  showView(calendarView);
+  loadCalendarDay();
+});
+$("#calendarBack").addEventListener("click", () => showView(appView));
+$("#calendarDate").addEventListener("change", loadCalendarDay);
+
+async function loadCalendarDay() {
+  const key = $("#calendarDate").value || localDateKey();
+  const snap = await get(ref(db, `shared/daily/${key}`));
+  const data = snap.val() || {};
+  const wrap = $("#calendarDayRows");
+  wrap.replaceChildren();
+
+  const rows = Object.entries(currentItems).map(([id,item]) => ({
+    name: item.name || "Bez názvu",
+    value: Number(data[id] || 0)
+  })).filter(row => row.value !== 0);
+
+  $("#calendarEmpty").classList.toggle("hidden", rows.length > 0);
+  rows.forEach(row => {
+    const el = document.createElement("div");
+    el.className = "summary-row";
+    el.innerHTML = `<span>${escapeHtml(row.name)}</span><strong>${row.value.toLocaleString("cs-CZ")}</strong>`;
+    wrap.appendChild(el);
+  });
+}
+
+overviewBtn.addEventListener("click", () => {
+  periodAnchor = new Date();
+  showView(overviewView);
+  loadOverview();
+});
+$("#overviewBack").addEventListener("click", () => showView(appView));
+
+document.querySelectorAll("[data-period]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    activePeriod = btn.dataset.period;
+    document.querySelectorAll("[data-period]").forEach(b => b.classList.toggle("active", b === btn));
+    periodAnchor = new Date();
+    loadOverview();
+  });
+});
+$("#periodPrev").addEventListener("click", () => shiftPeriod(-1));
+$("#periodNext").addEventListener("click", () => shiftPeriod(1));
+
+function shiftPeriod(direction) {
+  if (activePeriod === "week") periodAnchor.setDate(periodAnchor.getDate() + 7 * direction);
+  if (activePeriod === "month") periodAnchor.setMonth(periodAnchor.getMonth() + direction);
+  if (activePeriod === "year") periodAnchor.setFullYear(periodAnchor.getFullYear() + direction);
+  loadOverview();
+}
+
+function periodRange() {
+  const a = new Date(periodAnchor);
+  a.setHours(0,0,0,0);
+  let start, end, label;
+
+  if (activePeriod === "week") {
+    const day = (a.getDay() + 6) % 7;
+    start = new Date(a); start.setDate(a.getDate() - day);
+    end = new Date(start); end.setDate(start.getDate() + 6);
+    label = `${start.toLocaleDateString("cs-CZ")} – ${end.toLocaleDateString("cs-CZ")}`;
+  } else if (activePeriod === "month") {
+    start = new Date(a.getFullYear(), a.getMonth(), 1);
+    end = new Date(a.getFullYear(), a.getMonth() + 1, 0);
+    label = start.toLocaleDateString("cs-CZ", { month:"long", year:"numeric" });
+  } else {
+    start = new Date(a.getFullYear(), 0, 1);
+    end = new Date(a.getFullYear(), 11, 31);
+    label = String(a.getFullYear());
+  }
+  return { start, end, label };
+}
+
+async function loadOverview() {
+  const { start, end, label } = periodRange();
+  $("#periodLabel").textContent = label;
+  const snap = await get(ref(db, "shared/daily"));
+  const all = snap.val() || {};
+  const rows = [];
+
+  if (activePeriod === "year") {
+    for (let m = 0; m < 12; m++) {
+      let total = 0;
+      Object.entries(all).forEach(([key, values]) => {
+        const d = parseDateKey(key);
+        if (d.getFullYear() === start.getFullYear() && d.getMonth() === m) {
+          total += Object.values(values || {}).reduce((s,v) => s + Number(v || 0), 0);
+        }
+      });
+      rows.push({
+        label: new Date(start.getFullYear(), m, 1).toLocaleDateString("cs-CZ",{month:"short"}),
+        total
+      });
+    }
+  } else {
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const key = localDateKey(cursor);
+      const total = Object.values(all[key] || {}).reduce((s,v) => s + Number(v || 0), 0);
+      rows.push({
+        label: activePeriod === "week"
+          ? cursor.toLocaleDateString("cs-CZ",{weekday:"short",day:"numeric",month:"numeric"})
+          : cursor.toLocaleDateString("cs-CZ",{day:"numeric",month:"numeric"}),
+        total
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+  chartDataCache = rows;
+  renderOverviewTable(rows);
+  drawChart(rows);
+}
+
+function renderOverviewTable(rows) {
+  const body = $("#overviewTable");
+  body.replaceChildren();
+  rows.forEach(row => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(row.label)}</td><td>${row.total.toLocaleString("cs-CZ")}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+function drawChart(rows) {
+  const canvas = $("#overviewChart");
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.parentElement.clientWidth - 16;
+  const cssHeight = 300;
+  canvas.width = Math.max(320, cssWidth) * dpr;
+  canvas.height = cssHeight * dpr;
+  canvas.style.width = `${Math.max(320, cssWidth)}px`;
+  canvas.style.height = `${cssHeight}px`;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  const w = Math.max(320, cssWidth), h = cssHeight;
+  ctx.clearRect(0,0,w,h);
+  const pad = {l:42,r:12,t:18,b:48};
+  const cw = w-pad.l-pad.r, ch = h-pad.t-pad.b;
+  const max = Math.max(1, ...rows.map(r => r.total));
+
+  ctx.strokeStyle = "#d1d5db";
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "12px system-ui";
+  ctx.lineWidth = 1;
+
+  for (let i=0;i<=4;i++) {
+    const y = pad.t + ch - ch*i/4;
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke();
+    const val = Math.round(max*i/4);
+    ctx.fillText(String(val), 4, y+4);
+  }
+
+  const gap = 4;
+  const bw = Math.max(2, cw/rows.length-gap);
+  rows.forEach((row,i) => {
+    const x = pad.l + i*cw/rows.length + gap/2;
+    const bh = ch*(row.total/max);
+    ctx.fillStyle = "#2563eb";
+    ctx.fillRect(x, pad.t+ch-bh, bw, bh);
+
+    const showEvery = rows.length > 14 ? Math.ceil(rows.length/8) : 1;
+    if (i % showEvery === 0) {
+      ctx.save();
+      ctx.translate(x+bw/2, h-10);
+      ctx.rotate(-0.55);
+      ctx.fillStyle = "#374151";
+      ctx.textAlign = "right";
+      ctx.fillText(row.label,0,0);
+      ctx.restore();
+    }
+  });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[c]));
+}
 
 accountBtn.addEventListener("click", () => accountDialog.showModal());
 $("#logoutBtn").addEventListener("click", () => signOut(auth));

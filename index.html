@@ -12,7 +12,11 @@
 <body>
   <header>
     <h1>Počítadlo</h1>
-    <button id="accountBtn" class="icon-btn hidden" aria-label="Účet">⋮</button>
+    <div class="header-actions">
+      <button id="calendarBtn" class="icon-btn hidden" aria-label="Kalendář">▦</button>
+      <button id="overviewBtn" class="icon-btn hidden" aria-label="Přehled">▥</button>
+      <button id="accountBtn" class="icon-btn hidden" aria-label="Účet">⋮</button>
+    </div>
   </header>
 
   <main>
@@ -24,6 +28,46 @@
     <section id="appView" class="hidden">
       <div id="items" class="items"></div>
       <p id="emptyState" class="empty hidden">Zatím tu nic není.</p>
+    </section>
+
+    <section id="calendarView" class="hidden">
+      <div class="view-card">
+        <div class="view-heading">
+          <button id="calendarBack" class="secondary">←</button>
+          <h2>Kalendář</h2>
+        </div>
+        <input id="calendarDate" type="date">
+        <div id="calendarDayRows" class="summary-rows"></div>
+        <p id="calendarEmpty" class="empty hidden">V tento den nejsou žádné záznamy.</p>
+      </div>
+    </section>
+
+    <section id="overviewView" class="hidden">
+      <div class="view-card">
+        <div class="view-heading">
+          <button id="overviewBack" class="secondary">←</button>
+          <h2>Přehled</h2>
+        </div>
+        <div class="period-tabs">
+          <button type="button" data-period="week" class="active">Týden</button>
+          <button type="button" data-period="month">Měsíc</button>
+          <button type="button" data-period="year">Rok</button>
+        </div>
+        <div class="period-nav">
+          <button id="periodPrev" class="secondary">‹</button>
+          <strong id="periodLabel"></strong>
+          <button id="periodNext" class="secondary">›</button>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="overviewChart" width="720" height="340"></canvas>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Celkem</th></tr></thead>
+            <tbody id="overviewTable"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -78,6 +122,7 @@
         <div>
           <h2 class="item-name"></h2>
           <div class="count">0</div>
+          <div class="today-count">Dnes: 0</div>
         </div>
         <button class="edit icon-btn" aria-label="Upravit">✎</button>
       </div>
