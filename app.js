@@ -24,6 +24,7 @@ const itemsEl = $("#items");
 const emptyState = $("#emptyState");
 const addBtn = $("#addBtn");
 const accountBtn = $("#accountBtn");
+const themeBtn = $("#themeBtn");
 const calendarBtn = $("#calendarBtn");
 const overviewBtn = $("#overviewBtn");
 const addDialog = $("#addDialog");
@@ -38,6 +39,34 @@ let deferredInstallPrompt = null;
 let activePeriod = "week";
 let periodAnchor = new Date();
 let chartDataCache = [];
+
+
+function applyTheme(theme) {
+  const dark = theme === "dark";
+  document.body.classList.toggle("dark", dark);
+  themeBtn.textContent = dark ? "☀" : "◐";
+  themeBtn.setAttribute("aria-label", dark ? "Světlý režim" : "Tmavý režim");
+  themeBtn.title = dark ? "Světlý režim" : "Tmavý režim";
+  localStorage.setItem("pocitadlo-theme", dark ? "dark" : "light");
+}
+
+const savedTheme = localStorage.getItem("pocitadlo-theme");
+applyTheme(savedTheme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+themeBtn.addEventListener("click", () => {
+  applyTheme(document.body.classList.contains("dark") ? "light" : "dark");
+});
+
+function formatLastChange(change) {
+  if (!change || !change.at || !change.delta) return "";
+  const date = new Date(Number(change.at));
+  const sign = Number(change.delta) > 0 ? "+" : "−";
+  const amount = Math.abs(Number(change.delta));
+  const when = date.toLocaleString("cs-CZ", {
+    day: "numeric", month: "numeric", year: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  });
+  return `Naposledy ${when}: ${sign}${amount}`;
+}
 
 function allowed(user) {
   return !!user?.email && allowedEmails.map(x => x.toLowerCase()).includes(user.email.toLowerCase());
@@ -123,8 +152,15 @@ function renderItems() {
     const node = $("#itemTemplate").content.firstElementChild.cloneNode(true);
     node.querySelector(".item-name").textContent = item.name || "Bez názvu";
     node.querySelector(".count").textContent = Number(item.count || 0).toLocaleString("cs-CZ");
-    node.querySelector(".today-value").textContent =
-      Number(todayValues[id] || 0).toLocaleString("cs-CZ");
+    const todayCount = Number(todayValues[id] || 0);
+    node.querySelector(".today-value").textContent = todayCount.toLocaleString("cs-CZ");
+
+    const lastChangeEl = node.querySelector(".last-change");
+    const lastChangeText = formatLastChange(item.lastChange);
+    if (todayCount === 0 && lastChangeText) {
+      lastChangeEl.textContent = lastChangeText;
+      lastChangeEl.classList.remove("hidden");
+    }
 
     const addOneButton = node.querySelector(".item-add-one");
     addOneButton.addEventListener("click", () => addValue(id, 1, addOneButton));
@@ -176,27 +212,39 @@ function renderItems() {
 async function addValue(id, value, button) {
   if (!Number.isInteger(value) || value === 0) return;
   button?.classList.add("syncing");
+
   const day = localDateKey();
-  const totalRef = ref(db, `shared/items/${id}/count`);
+  const itemRef = ref(db, `shared/items/${id}`);
   const dailyRef = ref(db, `shared/daily/${day}/${id}`);
+  const now = Date.now();
 
   try {
-    const beforeSnap = await get(totalRef);
-    const beforeTotal = Number(beforeSnap.val() || 0);
-    const effectiveDelta = value < 0 ? -Math.min(Math.abs(value), beforeTotal) : value;
-    if (effectiveDelta === 0) return;
+    let appliedDelta = 0;
 
-    const totalResult = await runTransaction(totalRef, current => {
-      const next = Number(current || 0) + effectiveDelta;
-      return Math.max(0, next);
+    const result = await runTransaction(itemRef, current => {
+      if (!current) return; // Nikdy nevytváří nebo nepřepisuje neexistující položku.
+      const before = Number(current.count || 0);
+      const after = Math.max(0, before + value);
+      appliedDelta = after - before;
+      if (appliedDelta === 0) return current;
+
+      return {
+        ...current,
+        count: after,
+        updatedAt: now,
+        lastChange: {
+          at: now,
+          delta: appliedDelta
+        }
+      };
     });
-    if (!totalResult.committed) return;
+
+    if (!result.committed || appliedDelta === 0) return;
 
     await runTransaction(dailyRef, current => {
-      const next = Number(current || 0) + effectiveDelta;
-      return Math.max(0, next);
+      const next = Math.max(0, Number(current || 0) + appliedDelta);
+      return next;
     });
-    await set(ref(db, `shared/items/${id}/updatedAt`), Date.now());
   } catch (error) {
     console.error(error);
     alert("Hodnotu se nepodařilo uložit.");

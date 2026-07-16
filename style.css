@@ -42,3 +42,29 @@ th:last-child,td:last-child{text-align:right}
   .today-value{font-size:29px}
   .toggle-details{width:52px}
 }
+
+.item-main{display:flex;flex-direction:column;min-width:0}
+.last-change{margin-top:4px;font-size:12px;font-weight:600;color:#6b7280;white-space:normal;line-height:1.25}
+:root{color-scheme:light}
+body.dark{background:#111827;color:#f9fafb}
+body.dark header{background:#030712}
+body.dark main{color:#f9fafb}
+body.dark .item,
+body.dark .item-add-one,
+body.dark .toggle-details,
+body.dark .view-card,
+body.dark dialog,
+body.dark input{background:#1f2937;color:#f9fafb}
+body.dark .item-details{border-top-color:#374151}
+body.dark .secondary,
+body.dark .period-tabs button{background:#374151;color:#f9fafb}
+body.dark .period-tabs button.active{background:#2563eb}
+body.dark input{border-color:#4b5563}
+body.dark .last-change,
+body.dark .detail-label,
+body.dark .empty{color:#9ca3af}
+body.dark .summary-row,
+body.dark th,
+body.dark td{border-bottom-color:#374151}
+body.dark .chart-wrap{border-color:#374151}
+body.dark dialog::backdrop{background:#000b}

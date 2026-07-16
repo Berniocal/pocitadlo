@@ -13,6 +13,7 @@
   <header>
     <h1>Počítadlo</h1>
     <div class="header-actions">
+      <button id="themeBtn" class="icon-btn" aria-label="Tmavý režim" title="Tmavý režim">◐</button>
       <button id="calendarBtn" class="icon-btn hidden" aria-label="Kalendář">▦</button>
       <button id="overviewBtn" class="icon-btn hidden" aria-label="Přehled">▥</button>
       <button id="accountBtn" class="icon-btn hidden" aria-label="Účet">⋮</button>
@@ -120,7 +121,10 @@
     <article class="item collapsed">
       <div class="item-summary">
         <button class="item-add-one" type="button" aria-label="Přičíst jeden cvik">
-          <span class="item-name"></span>
+          <span class="item-main">
+            <span class="item-name"></span>
+            <small class="last-change hidden"></small>
+          </span>
           <strong class="today-value">0</strong>
         </button>
         <button class="toggle-details icon-btn" type="button" aria-label="Rozbalit položku" aria-expanded="false">⌄</button>
