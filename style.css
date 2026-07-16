@@ -21,3 +21,24 @@ table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:11px;border-bottom:1px solid #e5e7eb}
 th:last-child,td:last-child{text-align:right}
 @media(max-width:420px){.header-actions .icon-btn{padding:8px 9px}.view-card{padding:14px}}
+
+.item{padding:0;overflow:hidden}
+.item-summary{display:grid;grid-template-columns:1fr auto;align-items:stretch;min-height:76px}
+.item-add-one{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;padding:17px 18px;background:white;color:#111827;border-radius:0;text-align:left}
+.item-add-one:active{background:#eff6ff;transform:none}
+.item-name{font-size:21px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.today-value{min-width:48px;text-align:right;font-size:32px;line-height:1;color:#2563eb}
+.toggle-details{width:58px;border-radius:0;background:white;color:#374151;font-size:28px;transition:transform .18s ease}
+.item:not(.collapsed) .toggle-details{transform:rotate(180deg)}
+.item-details{padding:0 18px 18px;border-top:1px solid #e5e7eb}
+.item.collapsed .item-details{display:none}
+.detail-top{display:flex;justify-content:space-between;align-items:start;padding-top:15px}
+.detail-label{font-size:13px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em}
+.item-details .count{font-size:38px}
+@media(max-width:420px){
+  .item-summary{min-height:70px}
+  .item-add-one{padding:15px 14px}
+  .item-name{font-size:19px}
+  .today-value{font-size:29px}
+  .toggle-details{width:52px}
+}

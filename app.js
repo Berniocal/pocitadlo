@@ -123,8 +123,18 @@ function renderItems() {
     const node = $("#itemTemplate").content.firstElementChild.cloneNode(true);
     node.querySelector(".item-name").textContent = item.name || "Bez názvu";
     node.querySelector(".count").textContent = Number(item.count || 0).toLocaleString("cs-CZ");
-    node.querySelector(".today-count").textContent =
-      `Dnes: ${Number(todayValues[id] || 0).toLocaleString("cs-CZ")}`;
+    node.querySelector(".today-value").textContent =
+      Number(todayValues[id] || 0).toLocaleString("cs-CZ");
+
+    const addOneButton = node.querySelector(".item-add-one");
+    addOneButton.addEventListener("click", () => addValue(id, 1, addOneButton));
+
+    const toggleButton = node.querySelector(".toggle-details");
+    toggleButton.addEventListener("click", () => {
+      const collapsed = node.classList.toggle("collapsed");
+      toggleButton.setAttribute("aria-expanded", String(!collapsed));
+      toggleButton.setAttribute("aria-label", collapsed ? "Rozbalit položku" : "Sbalit položku");
+    });
 
     const quicks = Array.isArray(item.quick) ? item.quick : [1,3,5];
     const quickWrap = node.querySelector(".quick-buttons");

@@ -117,20 +117,29 @@
   </dialog>
 
   <template id="itemTemplate">
-    <article class="item">
-      <div class="item-top">
-        <div>
-          <h2 class="item-name"></h2>
-          <div class="count">0</div>
-          <div class="today-count">Dnes: 0</div>
-        </div>
-        <button class="edit icon-btn" aria-label="Upravit">✎</button>
+    <article class="item collapsed">
+      <div class="item-summary">
+        <button class="item-add-one" type="button" aria-label="Přičíst jeden cvik">
+          <span class="item-name"></span>
+          <strong class="today-value">0</strong>
+        </button>
+        <button class="toggle-details icon-btn" type="button" aria-label="Rozbalit položku" aria-expanded="false">⌄</button>
       </div>
-      <div class="quick-buttons"></div>
-      <form class="custom-form">
-        <input class="custom-value" type="number" min="1" max="99999" inputmode="numeric" placeholder="Jiná hodnota">
-        <button type="submit">Přidat</button>
-      </form>
+
+      <div class="item-details">
+        <div class="detail-top">
+          <div>
+            <div class="detail-label">Celkem</div>
+            <div class="count">0</div>
+          </div>
+          <button class="edit icon-btn" aria-label="Upravit">✎</button>
+        </div>
+        <div class="quick-buttons"></div>
+        <form class="custom-form">
+          <input class="custom-value" type="number" min="-99999" max="99999" inputmode="numeric" placeholder="Jiná hodnota">
+          <button type="submit">Přidat</button>
+        </form>
+      </div>
     </article>
   </template>
 
