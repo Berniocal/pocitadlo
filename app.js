@@ -37,6 +37,7 @@ let unsubscribeItems = null;
 let unsubscribeToday = null;
 let unsubscribeActiveTimers = null;
 let unsubscribeTimerSessions = null;
+let unsubscribeTapeEvents = null;
 let deferredInstallPrompt = null;
 let activePeriod = "week";
 let periodAnchor = new Date();
@@ -47,6 +48,7 @@ let selectedExerciseIndex = 0;
 let activeChartType = "bar";
 let activeTimers = {};
 let timerSessionsToday = {};
+let tapeEvents = {};
 let timerTickHandle = null;
 const expandedItems = new Set();
 
@@ -118,8 +120,8 @@ $("#loginBtn").addEventListener("click", async () => {
 getRedirectResult(auth).catch(console.error);
 
 onAuthStateChanged(auth, async (user) => {
-  [unsubscribeItems,unsubscribeToday,unsubscribeActiveTimers,unsubscribeTimerSessions].forEach(u=>{if(u)u();});
-  unsubscribeItems=unsubscribeToday=unsubscribeActiveTimers=unsubscribeTimerSessions=null;
+  [unsubscribeItems,unsubscribeToday,unsubscribeActiveTimers,unsubscribeTimerSessions,unsubscribeTapeEvents].forEach(u=>{if(u)u();});
+  unsubscribeItems=unsubscribeToday=unsubscribeActiveTimers=unsubscribeTimerSessions=unsubscribeTapeEvents=null;
   if(!user){loginView.classList.remove("hidden");[appView,calendarView,overviewView,addBtn,accountBtn,calendarBtn,overviewBtn].forEach(el=>el.classList.add("hidden"));return;}
   if(!allowed(user)){loginError.textContent=`Účet ${user.email} nemá povolený přístup.`;await signOut(auth);return;}
   loginView.classList.add("hidden");accountBtn.classList.remove("hidden");calendarBtn.classList.remove("hidden");overviewBtn.classList.remove("hidden");$("#userEmail").textContent=user.email;showView(appView);
@@ -127,6 +129,7 @@ onAuthStateChanged(auth, async (user) => {
   unsubscribeToday=onValue(ref(db,`shared/daily/${localDateKey()}`),s=>{todayValues=s.val()||{};renderItems();});
   unsubscribeActiveTimers=onValue(ref(db,"shared/activeTimers"),s=>{activeTimers=s.val()||{};renderItems();startTimerTicker();});
   unsubscribeTimerSessions=onValue(ref(db,`shared/timerSessions/${localDateKey()}`),s=>{timerSessionsToday=s.val()||{};renderItems();});
+  unsubscribeTapeEvents=onValue(ref(db,"shared/tapeEvents"),s=>{tapeEvents=s.val()||{};renderItems();startTimerTicker();});
 });
 
 function renderItems(){
@@ -134,7 +137,7 @@ function renderItems(){
   const entries=Object.entries(currentItems).sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
   emptyState.classList.toggle("hidden",entries.length>0);
   for(const [id,item] of entries){
-    const type=item.type==="timer"?"timer":"count";
+    const type=item.type==="timer"||item.type==="tape"?"timer":item.type==="tape"?"tape":"count";
     const node=$("#itemTemplate").content.firstElementChild.cloneNode(true); node.dataset.itemId=id;
     if(expandedItems.has(id)){node.classList.remove("collapsed");node.querySelector(".toggle-details").setAttribute("aria-expanded","true");}
     node.querySelector(".item-name").textContent=item.name||"Bez názvu";
@@ -144,7 +147,7 @@ function renderItems(){
     const toggle=node.querySelector(".toggle-details");toggle.addEventListener("click",e=>{e.stopPropagation();const c=node.classList.toggle("collapsed");c?expandedItems.delete(id):expandedItems.add(id);toggle.setAttribute("aria-expanded",String(!c));});
     const ca=node.querySelector(".collapsed-actions");
     if(type==="count"){
-      node.querySelector(".timer-details").classList.add("hidden");node.querySelector(".count-details").classList.remove("hidden");node.querySelector(".count").textContent=Number(item.count||0).toLocaleString("cs-CZ");
+      node.querySelector(".timer-details").classList.add("hidden");node.querySelector(".tape-details").classList.add("hidden");node.querySelector(".count-details").classList.remove("hidden");node.querySelector(".count").textContent=Number(item.count||0).toLocaleString("cs-CZ");
       const q=Array.isArray(item.quick)?item.quick:[1,3,5];
       const quickThree = document.createElement("button");
       quickThree.type = "button";
@@ -160,18 +163,100 @@ function renderItems(){
       const qw=node.querySelector(".quick-buttons");const minus=document.createElement("button");minus.type="button";minus.textContent="−1";minus.className="secondary";minus.onclick=()=>addValue(id,-1,minus);qw.appendChild(minus);
       q.slice(0,3).forEach(v=>{const bt=document.createElement("button");bt.type="button";bt.textContent=`+${v}`;bt.onclick=()=>addValue(id,Number(v),bt);qw.appendChild(bt)});qw.style.gridTemplateColumns="repeat(4,1fr)";
       node.querySelector(".custom-form").addEventListener("submit",async e=>{e.preventDefault();const inp=node.querySelector(".custom-value"),v=Number(inp.value);if(!Number.isInteger(v)||v===0)return;await addValue(id,v,e.submitter);inp.value="";});
-    }else{
-      node.querySelector(".count-details").classList.add("hidden");node.querySelector(".timer-details").classList.remove("hidden");node.querySelector(".detail-total-label").textContent="Celkem za všechny dny";node.querySelector(".count").textContent=formatDuration(item.count||0);
+    }else if(type==="timer"){
+      node.querySelector(".count-details").classList.add("hidden");node.querySelector(".timer-details").classList.remove("hidden");node.querySelector(".tape-details").classList.add("hidden");node.querySelector(".detail-total-label").textContent="Celkem za všechny dny";node.querySelector(".count").textContent=formatDuration(item.count||0);
       const play=document.createElement("button"),running=!!activeTimers[id]?.startedAt;play.type="button";play.className="timer-play";play.textContent=running?"■ Stop":"▶";play.classList.toggle("running",running);play.onclick=e=>{e.stopPropagation();running?stopTimer(id,play):startTimer(id,play)};ca.appendChild(play);
       node.querySelector(".item-name-button").onclick=()=>running?stopTimer(id):startTimer(id);
       node.querySelector(".timer-day-total").textContent=formatDuration(getDisplayedTimerTotal(id));node.querySelector(".edit-today-time").onclick=()=>editTodayTimerTotal(id);renderTimerSessions(node,id);
+    }else{
+      node.querySelector(".count-details").classList.add("hidden");node.querySelector(".timer-details").classList.add("hidden");node.querySelector(".tape-details").classList.remove("hidden");
+      const state=getTapeState(id,item),isOn=state.isOn,elapsed=formatElapsedSince(state.changedAt);
+      node.querySelector(".today-value").innerHTML=`<span class="tape-status-inline">${isOn?"Nalepen":"Sundán"}</span>`;
+      const toggleTape=document.createElement("button");toggleTape.type="button";toggleTape.className=`tape-toggle ${isOn?"on":"off"}`;toggleTape.textContent=isOn?"Sundat":"Nalepit";toggleTape.onclick=e=>{e.stopPropagation();setTapeState(id,!isOn,toggleTape)};ca.appendChild(toggleTape);
+      const nameButton=node.querySelector(".item-name-button");nameButton.onclick=()=>setTapeState(id,!isOn,nameButton);
+      node.querySelector(".detail-total-label").textContent="Stav trvá";node.querySelector(".count").textContent=elapsed;
+      node.querySelector(".tape-status-detail").textContent=isOn?"Tejp je nalepený":"Tejp je sundaný";
+      node.querySelector(".tape-since-detail").textContent=state.changedAt?`Od ${new Date(state.changedAt).toLocaleString("cs-CZ")}`:"Zatím bez záznamu";
+      node.querySelector(".edit-tape-time").onclick=()=>editTapeTime(id,state);
+      renderTapeHistory(node,id);
     }
     node.querySelector(".edit").onclick=()=>openEdit(id);itemsEl.appendChild(node);
   }
 }
 function getDisplayedTimerTotal(id){const saved=Number(todayValues[id]||0),a=activeTimers[id];return a?.startedAt?saved+Math.max(0,Math.floor((Date.now()-Number(a.startedAt))/1000)):saved;}
-function startTimerTicker(){if(timerTickHandle)clearInterval(timerTickHandle);if(!Object.keys(activeTimers).length)return;timerTickHandle=setInterval(()=>document.querySelectorAll(".item[data-item-id]").forEach(node=>{const id=node.dataset.itemId;if(!activeTimers[id]?.startedAt)return;const v=formatDuration(getDisplayedTimerTotal(id));node.querySelector(".today-value").textContent=v;const d=node.querySelector(".timer-day-total");if(d)d.textContent=v;}),1000);}
+function startTimerTicker(){if(timerTickHandle)clearInterval(timerTickHandle);if(!Object.keys(activeTimers).length)return;timerTickHandle=setInterval(()=>document.querySelectorAll(".item[data-item-id]").forEach(node=>{const id=node.dataset.itemId;const item=currentItems[id];
+      if(item?.type==="timer"&&activeTimers[id]?.startedAt){const v=formatDuration(getDisplayedTimerTotal(id));node.querySelector(".today-value").textContent=v;const d=node.querySelector(".timer-day-total");if(d)d.textContent=v;}
+      if(item?.type==="tape"){const state=getTapeState(id,item),c=node.querySelector(".count");if(c)c.textContent=formatElapsedSince(state.changedAt);}}),1000);}
 function renderTimerSessions(node,id){const sessions=Object.entries(timerSessionsToday[id]||{}).map(([sessionId,s])=>({sessionId,...s})).sort((a,b)=>Number(b.startedAt||0)-Number(a.startedAt||0));const list=node.querySelector(".session-list");node.querySelector(".no-sessions").classList.toggle("hidden",sessions.length>0);sessions.forEach(s=>{const row=document.createElement("div"),st=new Date(Number(s.startedAt)),en=new Date(Number(s.endedAt));row.className="session-row";row.innerHTML=`<div><div>${st.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit",second:"2-digit"})} – ${en.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div><div class="session-time">${st.toLocaleDateString("cs-CZ")}</div></div><div class="session-duration">${formatDuration(s.duration||0)}</div><button class="session-delete" type="button">Smazat</button>`;row.querySelector(".session-delete").onclick=()=>deleteTimerSession(id,s.sessionId,Number(s.duration||0));list.appendChild(row);});}
+
+
+function formatElapsedSince(timestamp){
+  if(!timestamp)return "—";
+  let seconds=Math.max(0,Math.floor((Date.now()-Number(timestamp))/1000));
+  const days=Math.floor(seconds/86400);seconds%=86400;
+  const hours=Math.floor(seconds/3600);seconds%=3600;
+  const minutes=Math.floor(seconds/60);
+  if(days>0)return `${days} d ${hours} h`;
+  if(hours>0)return `${hours} h ${minutes} min`;
+  return `${minutes} min`;
+}
+function getTapeState(id,item){
+  const events=Object.values(tapeEvents[id]||{}).sort((a,b)=>Number(a.at||0)-Number(b.at||0));
+  const latest=events.at(-1);
+  if(latest)return {isOn:latest.action==="apply",changedAt:Number(latest.at)};
+  return {isOn:!!item.tapeState?.isOn,changedAt:Number(item.tapeState?.changedAt||0)};
+}
+async function setTapeState(id,isOn,button){
+  button?.classList.add("syncing");
+  const at=Date.now(),action=isOn?"apply":"remove";
+  try{
+    const eventRef=push(ref(db,`shared/tapeEvents/${id}`));
+    await set(eventRef,{action,at});
+    await update(ref(db,`shared/items/${id}`),{
+      tapeState:{isOn,changedAt:at},
+      updatedAt:at,
+      lastChange:{at,delta:isOn?1:-1,label:isOn?"Nalepen":"Sundán"}
+    });
+  }catch(error){
+    console.error(error);alert("Změnu tejpu se nepodařilo uložit.");
+  }finally{button?.classList.remove("syncing");}
+}
+function renderTapeHistory(node,id){
+  const entries=Object.entries(tapeEvents[id]||{}).map(([eventId,event])=>({eventId,...event})).sort((a,b)=>Number(b.at||0)-Number(a.at||0));
+  const wrap=node.querySelector(".tape-history");
+  node.querySelector(".no-tape-history").classList.toggle("hidden",entries.length>0);
+  entries.forEach(event=>{
+    const row=document.createElement("div");row.className="tape-event";
+    row.innerHTML=`<div><div class="tape-event-action">${event.action==="apply"?"Nalepen":"Sundán"}</div><div class="tape-event-time">${new Date(Number(event.at)).toLocaleString("cs-CZ")}</div></div><button class="tape-event-delete" type="button">Smazat</button>`;
+    row.querySelector(".tape-event-delete").onclick=()=>deleteTapeEvent(id,event.eventId);
+    wrap.appendChild(row);
+  });
+}
+async function editTapeTime(id,state){
+  if(!state.changedAt){alert("Nejdřív zaznamenej nalepení nebo sundání.");return;}
+  const current=new Date(state.changedAt);
+  const local=`${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,"0")}-${String(current.getDate()).padStart(2,"0")}T${String(current.getHours()).padStart(2,"0")}:${String(current.getMinutes()).padStart(2,"0")}`;
+  const value=prompt("Datum a čas poslední změny (RRRR-MM-DDTHH:MM):",local);
+  if(value===null)return;
+  const at=new Date(value).getTime();
+  if(!Number.isFinite(at)){alert("Neplatné datum a čas.");return;}
+  const entries=Object.entries(tapeEvents[id]||{}).sort((a,b)=>Number(a[1].at||0)-Number(b[1].at||0));
+  const latest=entries.at(-1);
+  if(!latest)return;
+  await update(ref(db,`shared/tapeEvents/${id}/${latest[0]}`),{at});
+  await update(ref(db,`shared/items/${id}`),{tapeState:{isOn:state.isOn,changedAt:at},updatedAt:Date.now()});
+}
+async function deleteTapeEvent(id,eventId){
+  if(!confirm("Smazat tento záznam?"))return;
+  await remove(ref(db,`shared/tapeEvents/${id}/${eventId}`));
+  const snap=await get(ref(db,`shared/tapeEvents/${id}`));
+  const entries=Object.values(snap.val()||{}).sort((a,b)=>Number(a.at||0)-Number(b.at||0));
+  const latest=entries.at(-1);
+  await update(ref(db,`shared/items/${id}`),{
+    tapeState:latest?{isOn:latest.action==="apply",changedAt:Number(latest.at)}:{isOn:false,changedAt:0},
+    updatedAt:Date.now()
+  });
+}
 
 async function startTimer(id,button){button?.classList.add("syncing");try{await runTransaction(ref(db,`shared/activeTimers/${id}`),c=>c?.startedAt?undefined:{startedAt:Date.now()});}catch(e){console.error(e);alert("Časovač se nepodařilo spustit.");}finally{button?.classList.remove("syncing");}}
 async function stopTimer(id,button){button?.classList.add("syncing");const ar=ref(db,`shared/activeTimers/${id}`);try{const s=await get(ar),a=s.val();if(!a?.startedAt)return;const startedAt=Number(a.startedAt),endedAt=Date.now(),duration=Math.max(1,Math.floor((endedAt-startedAt)/1000));const r=await runTransaction(ar,c=>(c?.startedAt&&Number(c.startedAt)===startedAt)?null:undefined);if(!r.committed)return;const sr=push(ref(db,`shared/timerSessions/${localDateKey()}/${id}`));await set(sr,{startedAt,endedAt,duration});await runTransaction(ref(db,`shared/daily/${localDateKey()}/${id}`),c=>Number(c||0)+duration);await runTransaction(ref(db,`shared/items/${id}`),c=>c?{...c,count:Number(c.count||0)+duration,updatedAt:endedAt,lastChange:{at:endedAt,delta:duration}}:undefined);}catch(e){console.error(e);alert("Časovač se nepodařilo zastavit.");}finally{button?.classList.remove("syncing");}}
@@ -286,7 +371,7 @@ $("#addForm").addEventListener("submit", async e => {
   if (!name) return;
   const newRef = push(ref(db, "shared/items"));
   const type=document.querySelector('input[name="itemType"]:checked')?.value||"count";
-  await set(newRef,{name,type,count:0,quick:[1,3,5],createdAt:Date.now(),updatedAt:Date.now()});
+  await set(newRef,{name,type,count:0,quick:[1,3,5],tapeState:type==="tape"?{isOn:false,changedAt:0}:null,createdAt:Date.now(),updatedAt:Date.now()});
   addDialog.close();
 });
 
@@ -308,8 +393,8 @@ $("#editForm").addEventListener("submit", async e => {
   const id = $("#editId").value;
   const name = $("#editName").value.trim();
   const item=currentItems[id]||{},quick=[$("#quick1"),$("#quick2"),$("#quick3")].map(el=>Number(el.value));
-  if(!name)return;if(item.type!=="timer"&&quick.some(v=>!Number.isInteger(v)||v<=0))return;
-  const changes={name,updatedAt:Date.now()};if(item.type!=="timer")changes.quick=quick;
+  if(!name)return;if(item.type==="count"&&quick.some(v=>!Number.isInteger(v)||v<=0))return;
+  const changes={name,updatedAt:Date.now()};if(item.type==="count")changes.quick=quick;
   await update(ref(db,`shared/items/${id}`),changes);
   editDialog.close();
 });
@@ -426,6 +511,7 @@ async function loadOverview() {
 
   overviewExercises = Object.entries(currentItems)
     .sort((a,b) => (a[1].createdAt || 0) - (b[1].createdAt || 0))
+    .filter(([,item]) => item.type !== "tape")
     .map(([id,item]) => ({ id, name: item.name || "Bez názvu" }));
 
   if (selectedExerciseIndex >= overviewExercises.length) selectedExerciseIndex = 0;

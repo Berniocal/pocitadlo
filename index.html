@@ -94,6 +94,7 @@
         <legend>Typ</legend>
         <label><input type="radio" name="itemType" value="count" checked> Počítadlo</label>
         <label><input type="radio" name="itemType" value="timer"> Časový cvik</label>
+        <label><input type="radio" name="itemType" value="tape"> Tejp</label>
       </fieldset>
       <div class="actions">
         <button type="button" data-close="addDialog" class="secondary">Zrušit</button>
@@ -158,6 +159,18 @@
           <div class="timer-day-edit"><span>Dnes celkem</span><strong class="timer-day-total">00:00</strong><button class="edit-today-time secondary" type="button">Upravit</button></div>
           <div class="session-list"></div>
           <p class="no-sessions empty hidden">Dnes zatím žádné měření.</p>
+        </div>
+        <div class="tape-details hidden">
+          <div class="tape-current">
+            <div>
+              <div class="detail-label">Aktuální stav</div>
+              <strong class="tape-status-detail"></strong>
+              <div class="tape-since-detail"></div>
+            </div>
+            <button class="edit-tape-time secondary" type="button">Upravit čas</button>
+          </div>
+          <div class="tape-history"></div>
+          <p class="no-tape-history empty hidden">Zatím žádná změna.</p>
         </div>
       </div>
     </article>
