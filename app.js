@@ -137,7 +137,7 @@ function renderItems(){
   const entries=Object.entries(currentItems).sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
   emptyState.classList.toggle("hidden",entries.length>0);
   for(const [id,item] of entries){
-    const type=item.type==="timer"||item.type==="tape"?"timer":item.type==="tape"?"tape":"count";
+    const type=item.type==="timer"?"timer":item.type==="tape"?"tape":"count";
     const node=$("#itemTemplate").content.firstElementChild.cloneNode(true); node.dataset.itemId=id;
     if(expandedItems.has(id)){node.classList.remove("collapsed");node.querySelector(".toggle-details").setAttribute("aria-expanded","true");}
     node.querySelector(".item-name").textContent=item.name||"Bez názvu";
@@ -264,7 +264,7 @@ async function editTodayTimerTotal(id){if(activeTimers[id]?.startedAt){alert("Ne
 async function deleteTimerSession(id,sessionId,duration){if(!confirm("Smazat toto měření?"))return;const sr=ref(db,`shared/timerSessions/${localDateKey()}/${id}/${sessionId}`),s=await get(sr);if(!s.exists())return;const d=Number(s.val()?.duration||duration||0);await remove(sr);await runTransaction(ref(db,`shared/daily/${localDateKey()}/${id}`),c=>Math.max(0,Number(c||0)-d));const now=Date.now();await runTransaction(ref(db,`shared/items/${id}`),c=>c?{...c,count:Math.max(0,Number(c.count||0)-d),updatedAt:now,lastChange:{at:now,delta:-d}}:undefined);}
 function applyOptimisticCount(id, requestedDelta) {
   const item = currentItems[id];
-  if (!item || item.type === "timer") return 0;
+  if (!item || item.type === "timer" || item.type === "tape") return 0;
 
   const beforeTotal = Number(item.count || 0);
   const beforeToday = Number(todayValues[id] || 0);
@@ -380,7 +380,7 @@ function openEdit(id) {
   if (!item) return;
   const quick = Array.isArray(item.quick) ? item.quick : [1,3,5];
   $("#editId").value = id;
-  $("#editDialog .quick-grid").classList.toggle("hidden",item.type==="timer");
+  $("#editDialog .quick-grid").classList.toggle("hidden",item.type==="timer"||item.type==="tape");
   $("#editName").value = item.name || "";
   $("#quick1").value = quick[0] ?? 1;
   $("#quick2").value = quick[1] ?? 3;
