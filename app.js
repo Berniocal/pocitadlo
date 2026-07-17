@@ -146,8 +146,17 @@ function renderItems(){
     if(type==="count"){
       node.querySelector(".timer-details").classList.add("hidden");node.querySelector(".count-details").classList.remove("hidden");node.querySelector(".count").textContent=Number(item.count||0).toLocaleString("cs-CZ");
       const q=Array.isArray(item.quick)?item.quick:[1,3,5];
-      q.slice(0,3).forEach(v=>{const bt=document.createElement("button");bt.type="button";bt.textContent=`+${v}`;bt.addEventListener("click",e=>{e.stopPropagation();addValue(id,Number(v),bt)});ca.appendChild(bt);});
-      const nb=node.querySelector(".item-name-button");nb.addEventListener("click",()=>addValue(id,1,nb));
+      const quickThree = document.createElement("button");
+      quickThree.type = "button";
+      quickThree.textContent = "+3";
+      quickThree.addEventListener("click", e => {
+        e.stopPropagation();
+        addValue(id, 3, quickThree);
+      });
+      ca.appendChild(quickThree);
+
+      const nb=node.querySelector(".item-name-button");
+      nb.addEventListener("click",()=>addValue(id,1,nb));
       const qw=node.querySelector(".quick-buttons");const minus=document.createElement("button");minus.type="button";minus.textContent="−1";minus.className="secondary";minus.onclick=()=>addValue(id,-1,minus);qw.appendChild(minus);
       q.slice(0,3).forEach(v=>{const bt=document.createElement("button");bt.type="button";bt.textContent=`+${v}`;bt.onclick=()=>addValue(id,Number(v),bt);qw.appendChild(bt)});qw.style.gridTemplateColumns="repeat(4,1fr)";
       node.querySelector(".custom-form").addEventListener("submit",async e=>{e.preventDefault();const inp=node.querySelector(".custom-value"),v=Number(inp.value);if(!Number.isInteger(v)||v===0)return;await addValue(id,v,e.submitter);inp.value="";});
@@ -168,9 +177,62 @@ async function startTimer(id,button){button?.classList.add("syncing");try{await 
 async function stopTimer(id,button){button?.classList.add("syncing");const ar=ref(db,`shared/activeTimers/${id}`);try{const s=await get(ar),a=s.val();if(!a?.startedAt)return;const startedAt=Number(a.startedAt),endedAt=Date.now(),duration=Math.max(1,Math.floor((endedAt-startedAt)/1000));const r=await runTransaction(ar,c=>(c?.startedAt&&Number(c.startedAt)===startedAt)?null:undefined);if(!r.committed)return;const sr=push(ref(db,`shared/timerSessions/${localDateKey()}/${id}`));await set(sr,{startedAt,endedAt,duration});await runTransaction(ref(db,`shared/daily/${localDateKey()}/${id}`),c=>Number(c||0)+duration);await runTransaction(ref(db,`shared/items/${id}`),c=>c?{...c,count:Number(c.count||0)+duration,updatedAt:endedAt,lastChange:{at:endedAt,delta:duration}}:undefined);}catch(e){console.error(e);alert("Časovač se nepodařilo zastavit.");}finally{button?.classList.remove("syncing");}}
 async function editTodayTimerTotal(id){if(activeTimers[id]?.startedAt){alert("Nejdřív zastav časovač.");return;}const cur=Number(todayValues[id]||0),inp=prompt("Celkový dnešní čas v sekundách:",String(cur));if(inp===null)return;const next=Number(inp);if(!Number.isInteger(next)||next<0){alert("Zadej celé nezáporné číslo v sekundách.");return;}const delta=next-cur;if(!delta)return;const now=Date.now();await set(ref(db,`shared/daily/${localDateKey()}/${id}`),next);await runTransaction(ref(db,`shared/items/${id}`),c=>c?{...c,count:Math.max(0,Number(c.count||0)+delta),updatedAt:now,lastChange:{at:now,delta}}:undefined);}
 async function deleteTimerSession(id,sessionId,duration){if(!confirm("Smazat toto měření?"))return;const sr=ref(db,`shared/timerSessions/${localDateKey()}/${id}/${sessionId}`),s=await get(sr);if(!s.exists())return;const d=Number(s.val()?.duration||duration||0);await remove(sr);await runTransaction(ref(db,`shared/daily/${localDateKey()}/${id}`),c=>Math.max(0,Number(c||0)-d));const now=Date.now();await runTransaction(ref(db,`shared/items/${id}`),c=>c?{...c,count:Math.max(0,Number(c.count||0)-d),updatedAt:now,lastChange:{at:now,delta:-d}}:undefined);}
+function applyOptimisticCount(id, requestedDelta) {
+  const item = currentItems[id];
+  if (!item || item.type === "timer") return 0;
+
+  const beforeTotal = Number(item.count || 0);
+  const beforeToday = Number(todayValues[id] || 0);
+  const appliedDelta = requestedDelta < 0
+    ? -Math.min(Math.abs(requestedDelta), beforeTotal, beforeToday)
+    : requestedDelta;
+
+  if (appliedDelta === 0) return 0;
+
+  item.count = beforeTotal + appliedDelta;
+  todayValues[id] = beforeToday + appliedDelta;
+  item.updatedAt = Date.now();
+  item.lastChange = { at: item.updatedAt, delta: appliedDelta };
+
+  const node = document.querySelector(`.item[data-item-id="${CSS.escape(id)}"]`);
+  if (node) {
+    const todayEl = node.querySelector(".today-value");
+    const totalEl = node.querySelector(".count");
+    const lastEl = node.querySelector(".last-change");
+
+    if (todayEl) todayEl.textContent = Number(todayValues[id]).toLocaleString("cs-CZ");
+    if (totalEl) totalEl.textContent = Number(item.count).toLocaleString("cs-CZ");
+    if (lastEl) {
+      lastEl.textContent = formatLastChange(item.lastChange, "count");
+      lastEl.classList.remove("hidden");
+    }
+
+    node.classList.add("syncing");
+  }
+
+  return appliedDelta;
+}
+
+async function refreshCountFromDatabase(id) {
+  const [itemSnap, dailySnap] = await Promise.all([
+    get(ref(db, `shared/items/${id}`)),
+    get(ref(db, `shared/daily/${localDateKey()}/${id}`))
+  ]);
+
+  if (itemSnap.exists()) currentItems[id] = itemSnap.val();
+  todayValues[id] = Number(dailySnap.val() || 0);
+  renderItems();
+}
+
 async function addValue(id, value, button) {
   if (!Number.isInteger(value) || value === 0) return;
+
   button?.classList.add("syncing");
+  const appliedDelta = applyOptimisticCount(id, value);
+  if (appliedDelta === 0) {
+    button?.classList.remove("syncing");
+    return;
+  }
 
   const day = localDateKey();
   const itemRef = ref(db, `shared/items/${id}`);
@@ -178,14 +240,12 @@ async function addValue(id, value, button) {
   const now = Date.now();
 
   try {
-    let appliedDelta = 0;
-
-    const result = await runTransaction(itemRef, current => {
-      if (!current) return; // Nikdy nevytváří nebo nepřepisuje neexistující položku.
+    const itemResult = await runTransaction(itemRef, current => {
+      if (!current) return;
       const before = Number(current.count || 0);
-      const after = Math.max(0, before + value);
-      appliedDelta = after - before;
-      if (appliedDelta === 0) return current;
+      const after = Math.max(0, before + appliedDelta);
+      const realDelta = after - before;
+      if (realDelta === 0) return current;
 
       return {
         ...current,
@@ -193,22 +253,23 @@ async function addValue(id, value, button) {
         updatedAt: now,
         lastChange: {
           at: now,
-          delta: appliedDelta
+          delta: realDelta
         }
       };
     });
 
-    if (!result.committed || appliedDelta === 0) return;
+    if (!itemResult.committed) throw new Error("Zápis položky nebyl potvrzen.");
 
     await runTransaction(dailyRef, current => {
-      const next = Math.max(0, Number(current || 0) + appliedDelta);
-      return next;
+      return Math.max(0, Number(current || 0) + appliedDelta);
     });
   } catch (error) {
     console.error(error);
+    await refreshCountFromDatabase(id);
     alert("Hodnotu se nepodařilo uložit.");
   } finally {
     button?.classList.remove("syncing");
+    document.querySelector(`.item[data-item-id="${CSS.escape(id)}"]`)?.classList.remove("syncing");
   }
 }
 
