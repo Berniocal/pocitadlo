@@ -90,6 +90,11 @@
       <label>Název
         <input id="newName" maxlength="40" required autofocus>
       </label>
+      <fieldset class="type-picker">
+        <legend>Typ</legend>
+        <label><input type="radio" name="itemType" value="count" checked> Počítadlo</label>
+        <label><input type="radio" name="itemType" value="timer"> Časový cvik</label>
+      </fieldset>
       <div class="actions">
         <button type="button" data-close="addDialog" class="secondary">Zrušit</button>
         <button type="submit">Přidat</button>
@@ -130,29 +135,30 @@
   <template id="itemTemplate">
     <article class="item collapsed">
       <div class="item-summary">
-        <button class="item-add-one" type="button" aria-label="Přičíst jeden cvik">
-          <span class="item-main">
-            <span class="item-name"></span>
-            <small class="last-change hidden"></small>
-          </span>
-          <strong class="today-value">0</strong>
+        <button class="item-name-button" type="button">
+          <span class="item-main"><span class="item-name"></span><small class="last-change hidden"></small></span>
         </button>
+        <div class="collapsed-actions"></div>
+        <strong class="today-value">0</strong>
         <button class="toggle-details icon-btn" type="button" aria-label="Rozbalit položku" aria-expanded="false">⌄</button>
       </div>
-
       <div class="item-details">
         <div class="detail-top">
-          <div>
-            <div class="detail-label">Celkem</div>
-            <div class="count">0</div>
-          </div>
+          <div><div class="detail-label detail-total-label">Celkem</div><div class="count">0</div></div>
           <button class="edit icon-btn" aria-label="Upravit">✎</button>
         </div>
-        <div class="quick-buttons"></div>
-        <form class="custom-form">
-          <input class="custom-value" type="number" min="-99999" max="99999" inputmode="numeric" placeholder="Jiná hodnota">
-          <button type="submit">Přidat</button>
-        </form>
+        <div class="count-details">
+          <div class="quick-buttons"></div>
+          <form class="custom-form">
+            <input class="custom-value" type="number" min="-99999" max="99999" inputmode="numeric" placeholder="Jiná hodnota">
+            <button type="submit">Přidat</button>
+          </form>
+        </div>
+        <div class="timer-details hidden">
+          <div class="timer-day-edit"><span>Dnes celkem</span><strong class="timer-day-total">00:00</strong><button class="edit-today-time secondary" type="button">Upravit</button></div>
+          <div class="session-list"></div>
+          <p class="no-sessions empty hidden">Dnes zatím žádné měření.</p>
+        </div>
       </div>
     </article>
   </template>
