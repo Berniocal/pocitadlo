@@ -176,6 +176,15 @@
     </article>
   </template>
 
+  <script>
+    document.addEventListener("click", event => {
+      const nameButton = event.target.closest(".item-name-button");
+      if (nameButton?.closest(".item")?.querySelector(".tape-status-inline")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  </script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
