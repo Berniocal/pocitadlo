@@ -45,8 +45,9 @@ function formatOverviewTable() {
       const raw = cell.dataset.rawSeconds ?? cell.textContent.replace(/\s/g, "");
       const seconds = Number(raw);
       if (!Number.isFinite(seconds)) return;
+      const formatted = formatMinutesSeconds(seconds);
       cell.dataset.rawSeconds = String(seconds);
-      cell.textContent = formatMinutesSeconds(seconds);
+      if (cell.textContent !== formatted) cell.textContent = formatted;
     });
   });
 }
@@ -65,8 +66,9 @@ function formatCalendarRows() {
     const raw = value.dataset.rawSeconds ?? value.textContent.replace(/\s/g, "");
     const seconds = Number(raw);
     if (!Number.isFinite(seconds)) return;
+    const formatted = formatMinutesSeconds(seconds);
     value.dataset.rawSeconds = String(seconds);
-    value.textContent = formatMinutesSeconds(seconds);
+    if (value.textContent !== formatted) value.textContent = formatted;
   });
 }
 
