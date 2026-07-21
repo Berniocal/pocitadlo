@@ -1,6 +1,6 @@
-const CACHE = "pocitadlo-v10";
+const CACHE = "pocitadlo-v11";
 const APP_SHELL = [
-  "./", "./index.html", "./style.css", "./app.js", "./config.js",
+  "./", "./index.html", "./style.css", "./app.js", "./time-format-fix.js", "./config.js",
   "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"
 ];
 
